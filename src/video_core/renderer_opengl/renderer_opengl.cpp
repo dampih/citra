@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <cstdlib>
 #include <memory>
+#include <thread>
 #include <glad/glad.h>
 #include "common/assert.h"
 #include "common/bit_field.h"
@@ -150,6 +151,13 @@ void RendererOpenGL::SwapBuffers() {
     {
         auto aggregator = Common::Profiling::GetTimingResultsAggregator();
         aggregator->AddFrame(profiler.GetPreviousFrameResults());
+        if (VideoCore::g_toggle_framelimit_enabled) {
+            Common::Profiling::Duration frame_time =
+                aggregator->GetAggregatedResults().frame_time.avg;
+            using FloatMs = std::chrono::duration<float, std::chrono::milliseconds::period>;
+            float average_frame_time = std::chrono::duration_cast<FloatMs>(frame_time).count();
+            FrameLimiter(average_frame_time, 60);
+        }
     }
 
     // Swap buffers
@@ -590,6 +598,15 @@ bool RendererOpenGL::Init() {
 	RefreshRasterizerSetting();
 
 	return true;
+}
+void RendererOpenGL::FrameLimiter(float average_frame_time, uint32_t framelimit) {
+    // calculate  difference between average frame time and frame time
+    // for the framelimit, and sleep for the difference in time.
+    float frame_time = 1000.0f / framelimit;
+    if (average_frame_time < frame_time) {
+        std::this_thread::sleep_for(
+            std::chrono::milliseconds(long(frame_time - average_frame_time)));
+    }
 }
 
 /// Shutdown the renderer
